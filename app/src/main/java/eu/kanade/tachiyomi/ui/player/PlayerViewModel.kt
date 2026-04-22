@@ -1504,9 +1504,32 @@ class PlayerViewModel @JvmOverloads constructor(
                     }.awaitAll()
 
                     if (hasFoundPreferredVideo.compareAndSet(false, true)) {
-                        val (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+                        var (hosterIdx, videoIdx) = HosterLoader.selectBestVideo(hosterState.value)
+
                         if (hosterIdx == -1) {
-                            throw ExceptionWithStringResource("No available videos", AYMR.strings.no_available_videos)
+                            for (lazyIdx in hosterList.indices) {
+                                if (hosterState.value[lazyIdx] !is HosterState.Idle) continue
+
+                                val lazyHoster = hosterList[lazyIdx]
+                                _hosterState.updateAt(lazyIdx, HosterState.Loading(lazyHoster.hosterName))
+                                val forcedState =
+                                    EpisodeLoader.loadHosterVideos(source, lazyHoster, force = true)
+                                _hosterState.updateAt(lazyIdx, forcedState)
+
+                                val retry = HosterLoader.selectBestVideo(hosterState.value)
+                                if (retry.first != -1) {
+                                    hosterIdx = retry.first
+                                    videoIdx = retry.second
+                                    break
+                                }
+                            }
+
+                            if (hosterIdx == -1) {
+                                throw ExceptionWithStringResource(
+                                    "No available videos",
+                                    AYMR.strings.no_available_videos,
+                                )
+                            }
                         }
 
                         val video = (hosterState.value[hosterIdx] as HosterState.Ready).videoList[videoIdx]
